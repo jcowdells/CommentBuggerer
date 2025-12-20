@@ -1,0 +1,1 @@
+Mostly useless program to trawl through my code and figure out which bits I have neglected to comment. And then allows auto generation of doxygen comments and stuff. Then can overwrite my old funcs with the new commented funcs. Also looks alright as far as tkinter stuff goes.
