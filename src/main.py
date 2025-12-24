@@ -360,6 +360,9 @@ class Checker:
         if report.doxygen_comment is None:
             return False
 
+        if len(report.doxygen_comment) >= 3 and report.type != project_crawler.ReportType.FUNCTION:
+            return True
+
         contain_dict = dict()
         param_lines = [i for i in report.doxygen_comment if "@param" in i]
         is_valid = True
@@ -368,7 +371,7 @@ class Checker:
             for i, line in enumerate(param_lines):
                 if param.name in line:
                     contain_dict[param.name] = i
-            if param.name not in contain_dict.keys():
+            if param.name not in contain_dict.keys() and param.name != "<unknown>":
                 contain_dict[param.name] = -1
                 is_valid = False
 
@@ -379,6 +382,9 @@ class Checker:
                     contains_throws = True
                     break
             if not contains_throws:
+                is_valid = False
+        elif report.returns == "tek_init":
+            if len(report.doxygen_comment) < 3:
                 is_valid = False
         elif report.returns != "void":
             contains_returns = False
@@ -393,16 +399,20 @@ class Checker:
 
     @staticmethod
     def check_comment_ratio(report):
-        return report.num_comments / report.num_lines > 0.1
+        if report.type != project_crawler.ReportType.FUNCTION:
+            return True
+        len_doxygen = 0 if report.doxygen_comment is None else len(report.doxygen_comment)
+        return report.num_comments / (report.num_lines - len_doxygen) > 0.1
 
     def check(self):
         for i in range(len(self.__lines)):
             report = project_crawler.generate_function_report(self.__file_name, self.__lines, i)
             if report is not None:
                 self.__report = report
+                len_doxygen = 0 if report.doxygen_comment is None else len(report.doxygen_comment)
                 return CheckerResult(
                     doxygen=self.check_doxygen(report),
-                    comment_ratio=report.num_comments / report.num_lines
+                    comment_ratio=report.num_comments / (report.num_lines - len_doxygen)
                 )
         return None
 
@@ -426,7 +436,7 @@ class Checker:
 class Window(tk.Tk):
     TITLE = "Comment Buggerer"
 
-    def __init__(self):
+    def __init__(self, ignorefile="res/ignorefile.txt"):
         super().__init__()
         self.title(Window.TITLE)
         self.geometry("1280x720")
@@ -438,7 +448,7 @@ class Window(tk.Tk):
         self.load_time = 0
         self.file_queue: list[project_crawler.Report] = list()
         self.active_file = ""
-        self.active_func = None
+        self.active_func: project_crawler.Report | None = None
         self.active_checker = None
         self.num_functions = 0
 
@@ -449,6 +459,18 @@ class Window(tk.Tk):
         highlighter.add_rule(HighlighterMode.STRING, Colour.STRING)
         highlighter.add_rule(HighlighterMode.MACRO, Colour.MACRO)
         highlighter.add_rule(HighlighterMode.COMMENT, Colour.COMMENT)
+
+        self.ignorefile = ignorefile
+        self.ignore: list[str] = list()
+
+        if not os.path.exists(self.ignorefile):
+            with open(self.ignorefile, "w"):
+                pass
+
+        with open(self.ignorefile) as f_ptr:
+            ignore = f_ptr.read().split("\n")
+            for line in ignore:
+                self.ignore.append(line)
 
         # main editor section
         self.editor = ttk.Frame(self)
@@ -474,6 +496,8 @@ class Window(tk.Tk):
         self.copy_button.pack(padx=6, pady=3)
         self.gen_doxygen = ttk.Button(self.centre_buttons, text="Insert\nDoxygen", command=self.insert_doxygen)
         self.gen_doxygen.pack(padx=6, pady=3)
+        self.ignore_button = ttk.Button(self.centre_buttons, text="Ignore", command=self.ignore_func)
+        self.ignore_button.pack(padx=6, pady=3)
 
         self.accept_button = ttk.Button(self.controller, text="Accept", command=self.push)
         self.accept_button.pack(padx=6, pady=3, side=tk.BOTTOM)
@@ -514,7 +538,7 @@ class Window(tk.Tk):
         self.completion.config(text=f"{ratio*100:.3f}% Complete ({num_left} of {self.num_functions} remaining)")
 
     def update_comment_ratio(self, ratio):
-        colour = "red" if ratio < 0.1 else "green"
+        colour = "green" if ratio > 0.1 else "red"
         self.ratio.config(text=f"Comment: {ratio*100:.0f}%", foreground=colour)
 
     def update_doxygen(self, doxy_valid):
@@ -531,6 +555,9 @@ class Window(tk.Tk):
             for i in range(len(f_lines)):
                 report = project_crawler.generate_function_report(f_path, f_lines, i)
                 if report is None:
+                    continue
+
+                if project_crawler.generate_report_hash(report) in self.ignore:
                     continue
 
                 if not (Checker.check_comment_ratio(report) and Checker.check_doxygen(report)):
@@ -568,6 +595,14 @@ class Window(tk.Tk):
         self.update_completion()
         self.active_checker = Checker(self.active_file, str(self.final))
 
+    def ignore_func(self):
+        self.ignore.append(project_crawler.generate_report_hash(self.active_func))
+        self.advance_editor()
+
+    def write_ignorefile(self):
+        with open(self.ignorefile, "w") as f_ptr:
+            f_ptr.write("\n".join(self.ignore))
+
     def overwrite_func(self):
         with open(self.active_file, "r") as f_ptr:
             file_data = f_ptr.read()
@@ -595,6 +630,7 @@ class Window(tk.Tk):
         self.advance_editor()
 
     def stop(self):
+        self.write_ignorefile()
         self.running = False
 
     def run(self):

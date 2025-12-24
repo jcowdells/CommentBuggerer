@@ -50,6 +50,12 @@ class FunctionNode(Node):
         super().__init__(name, parent, children, **kwargs)
         self.fillcolor = "white"
 
+def generate_report_hash(report):
+    file = os.path.basename(report.file)
+    name = report.name
+    line = report.start_line
+    return f"{file}@{line}-{name}"
+
 macro_func_pattern = re.compile(
     r'^\s*#define\s+([A-Za-z_]\w*)\s*\(([^)]*)\)',
 )
@@ -214,6 +220,7 @@ def generate_function_report(file_name, file_lines, function_line_number):
         return None
 
     report_type, report_name, report_args = function_data
+
     report_return = ""
 
     if report_type == ReportType.FUNCTION:
