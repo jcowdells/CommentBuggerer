@@ -558,6 +558,7 @@ class Window(tk.Tk):
                     continue
 
                 if project_crawler.generate_report_hash(report) in self.ignore:
+                    self.num_functions += 1
                     continue
 
                 if not (Checker.check_comment_ratio(report) and Checker.check_doxygen(report)):
@@ -583,6 +584,11 @@ class Window(tk.Tk):
         self.final.write(original_text)
 
     def advance_editor(self):
+        if len(self.file_queue) == 0:
+            self.original.write("DONE!")
+            self.final.write("DONE!")
+            return
+
         self.active_func = self.file_queue.pop()
         self.active_file = self.active_func.file
         with open(self.active_file) as f_ptr:
